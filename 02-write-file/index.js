@@ -11,7 +11,7 @@ fs.writeFile(filePath, "", (err) => {
     throw err;
   }
 });
-stdout.write(`Hello! Enter the text: `);
+stdout.write(`Hello! Enter the text:  `);
 
 rl.on("line", (input) => {
   if (input.indexOf("exit") === -1) {
