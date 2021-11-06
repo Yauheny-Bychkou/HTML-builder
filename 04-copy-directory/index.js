@@ -18,6 +18,6 @@ const copyFiles = async () => {
     });
   });
 };
-console.log("test");
+
 copyFolder();
 copyFiles();
