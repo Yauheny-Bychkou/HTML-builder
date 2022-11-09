@@ -1,72 +1,111 @@
-const fs = require("fs");
 const path = require("path");
-const dir = path.join(__dirname, "project-dist");
-const html = path.join(__dirname, "template.html");
-const newHtml = path.join(__dirname, "project-dist", "index.html");
-const assetsDir = path.join(__dirname, "project-dist", "assets");
-const assets = path.join(__dirname, "assets");
-const components = path.join(__dirname, "components");
-const styles = path.join(__dirname, "styles");
-const newStyles = path.join(__dirname, "project-dist", "style.css");
+const fs = require("fs/promises");
+const fs1 = require("fs");
 
-fs.mkdir(dir, { recursive: true }, (err) => {
-  if (err) throw err;
-});
-fs.mkdir(assetsDir, { recursive: true }, (err) => {
-  if (err) throw err;
-});
-fs.writeFile(newStyles, "", "utf-8", (err) => {
-  if (err) throw err;
-});
-fs.writeFile(newHtml, "", "utf-8", (err) => {
-  if (err) throw err;
-});
+async function copy(srcPath, dstPath) {
+  await fs.rm(dstPath, { recursive: true, force: true });
+  await fs.mkdir(dstPath, { recursive: true });
 
-fs.readFile(html, "utf-8", (err, content) => {
-  if (err) throw err;
-  fs.readdir(components, { withFileTypes: true }, (err, files) => {
-    if (err) throw err;
-    files.forEach((item) => {
-      fs.readFile(path.join(components, item.name), "utf-8", (err, contentOne) => {
-        if (err) throw err;
-        content = content.replace(`{{${item.name.split(".")[0]}}}`, contentOne);
-        fs.writeFile(newHtml, content, "utf-8", (err) => {});
-      });
-    });
-  });
-});
+  const files = await fs.readdir(srcPath);
 
-fs.readdir(styles, (err, files) => {
-  if (err) {
-    throw err;
+  for (const file of files) {
+    const f = await fs.stat(path.join(srcPath, file));
+
+    if (f.isDirectory()) {
+      copy(path.join(srcPath, file), path.join(dstPath, file));
+    } else {
+      let _src = path.join(srcPath, file);
+      let _dst = path.join(dstPath, file);
+
+      await fs.copyFile(_src, _dst);
+
+      console.log(` - copied ${path.join(srcPath, file)}... done.`);
+    }
   }
-  files.forEach((item) => {
-    if (item.split(".")[1] === "css") {
-      const readableStream = fs.createReadStream(path.join(styles, item));
-      readableStream.on("data", (data) => {
-        fs.appendFile(newStyles, data, (err) => {
-          if (err) {
-            throw err;
-          }
-        });
+}
+
+async function creatStyle() {
+  const output = fs1.createWriteStream(path.join(__dirname, "project-dist", "style.css"));
+
+  const files = await fs.readdir(path.join(__dirname, "styles"));
+
+  for (const file of files) {
+    const f = await fs.stat(path.join(__dirname, "styles", file));
+
+    if (f.isFile() && path.parse(file).ext === ".css") {
+      let tempData = [];
+
+      const stream = fs1.createReadStream(path.join(__dirname, "styles", file), "utf-8");
+
+      stream.on("data", (chunk) => tempData.push(chunk));
+      stream.on("end", () => {
+        output.write(tempData.join(""));
+        console.log(` - add ${file} to style.css... done.`);
       });
     }
-  });
-});
-fs.readdir(assets, (err, files) => {
-  if (err) {
-    throw err;
   }
-  files.forEach((item) => {
-    fs.mkdir(path.join(assetsDir, item), { recursive: true }, (err) => {
-      if (err) throw err;
+}
+
+async function creatHtml(template) {
+  let templateData = await new Promise((resolve, reject) => {
+    const stream = fs1.createReadStream(path.join(__dirname, template), "utf-8");
+
+    let templateData = [];
+    stream.on("data", (chunk) => templateData.push(chunk));
+    stream.on("end", () => {
+      templateData = templateData.join("");
+      resolve(templateData);
     });
-    fs.readdir(path.join(assets, item), (err, file) => {
-      file.forEach((elem) => {
-        fs.copyFile(path.join(assets, item, elem), path.join(assetsDir, item, elem), (err) => {
-          if (err) throw err;
-        });
-      });
-    });
+    stream.on("error", (error) => reject(error));
   });
-});
+
+  console.log(" - read html template file... done.");
+
+  let components = {};
+  const files = await fs.readdir(path.join(__dirname, "components"));
+
+  for (const file of files) {
+    const f = await fs.stat(path.join(__dirname, "components", file));
+
+    if (f.isFile() && path.parse(file).ext === ".html") {
+      let tempData = await new Promise((resolve, reject) => {
+        let tempData = [];
+        const stream = fs1.createReadStream(path.join(__dirname, "components", file), "utf-8");
+
+        stream.on("data", (chunk) => tempData.push(chunk));
+        stream.on("end", () => {
+          resolve(tempData.join(""));
+        });
+        stream.on("error", (error) => reject(error));
+      });
+
+      components[path.parse(file).name] = tempData;
+      console.log(` - read html component - ${file}... done.`);
+    }
+  }
+
+  for (component in components) {
+    templateData = templateData.replace(`{{${component}}}`, components[component]);
+  }
+
+  const output = fs1.createWriteStream(path.join(__dirname, "project-dist", "index.html"));
+
+  output.write(templateData);
+}
+
+async function build() {
+  try {
+    await fs.rm(path.join(__dirname, "project-dist"), { recursive: true, force: true });
+    await fs.mkdir(path.join(__dirname, "project-dist"), { recursive: true });
+
+    copy(path.join(__dirname, "assets"), path.join(__dirname, "project-dist", "assets"));
+
+    creatHtml("template.html");
+
+    creatStyle();
+  } catch (err) {
+    console.error(err);
+  }
+}
+
+build();
